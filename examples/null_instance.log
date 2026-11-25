@@ -1,0 +1,2 @@
+SCRIPT ERROR: Invalid assignment of property or key 'flip_h' with value of type 'bool' on a base object of type 'null instance'.
+          at: _physics_process (res://player.gd:24)

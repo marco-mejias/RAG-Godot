@@ -1,0 +1,4 @@
+E 0:00:00:0587   player.gd:11 @ _ready(): Node not found: "../HUD/HealthLabel" (relative to "/root/Main/Player").
+  <C++ Error>    Method/function failed. Returning: nullptr
+  <C++ Source>   scene/main/node.cpp:1877 @ get_node()
+  <Stack Trace>  player.gd:11 @ _ready()
