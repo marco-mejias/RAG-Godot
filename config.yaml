@@ -20,7 +20,8 @@ retrieval:
 llm:
   provider: gemini                    # gemini | claude | ollama  (env LLM_PROVIDER or --provider override it)
   models:
-    gemini: gemini-2.5-flash
+    # A list is a fallback chain: when a model is overloaded (503) or out of quota, the next is tried.
+    gemini: [gemini-3.5-flash, gemini-3.7-flash, gemini-3.8-flash, gemini-3.1-flash-lite]
     claude: claude-opus-5-5
     ollama: qwen3:8b
 

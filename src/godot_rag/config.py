@@ -26,11 +26,11 @@ class Settings:
     chunk_overlap: int
     top_k: int
     provider: str
-    models: dict[str, str]
+    models: dict[str, str | list[str]]     # a list = fallback chain (Gemini)
     max_agent_steps: int
     results_per_search: int
 
-    def model_for(self, provider: str) -> str:
+    def model_for(self, provider: str) -> str | list[str]:
         try:
             return self.models[provider]
         except KeyError:

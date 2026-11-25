@@ -62,8 +62,9 @@ def cmd_ask(settings: Settings, args) -> int:
     from godot_rag.retrieve import Retriever
 
     llm = get_llm(settings, args.provider)
-    answer = answer_question(args.question, Retriever(settings), llm, k=args.k)
+    answer = answer_question(args.question, Retriever(settings), llm, k=args.k, rewrite=not args.no_rewrite)
     if args.show_context:
+        print(f"Search query: {answer.search_query}")
         print("Context given to the LLM:")
         for n, hit in enumerate(answer.context, 1):
             print(f"  [{n}] {hit.score:.3f} {hit.section}")
@@ -131,7 +132,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("question")
     p.add_argument("-k", type=int, help="number of excerpts to retrieve")
     p.add_argument("--provider", help="gemini | claude | ollama (overrides config)")
-    p.add_argument("--show-context", action="store_true", help="also print the retrieved excerpts")
+    p.add_argument("--show-context", action="store_true", help="also print the search query and retrieved excerpts")
+    p.add_argument("--no-rewrite", action="store_true", help="search with the question as typed (no LLM rewrite)")
     p.set_defaults(func=cmd_ask)
 
     p = sub.add_parser("explain-error", help="explain a Godot error and how to fix it")

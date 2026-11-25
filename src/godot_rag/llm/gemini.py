@@ -13,12 +13,20 @@ from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec
 class GeminiLLM(LLM):
     provider = "gemini"
 
-    def __init__(self, model: str):
+    def __init__(self, models: str | list[str]):
         key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         if not key:
             raise LLMError("Gemini: GEMINI_API_KEY is not set (see .env.example)")
-        self.model = model
-        self.client = genai.Client(api_key=key)
+        # Several models = fallback chain: if one is overloaded, the next one is tried.
+        self.models = [models] if isinstance(models, str) else list(models)
+        self.model = self.models[0]
+        # Retry with exponential backoff on rate limits (429) and overloaded servers (5xx).
+        retry = types.HttpRetryOptions(attempts=2, initial_delay=2, max_delay=8,
+                                       http_status_codes=[429, 500, 502, 503, 504])
+        self.client = genai.Client(
+            api_key=key,
+            http_options=types.HttpOptions(retry_options=retry, timeout=120_000),   # ms per attempt
+        )
 
     @staticmethod
     def _to_api(messages: list[Message]) -> list[types.Content]:
@@ -55,14 +63,24 @@ class GeminiLLM(LLM):
                 ])
             ] if tools else None,
         )
-        try:
-            response = self.client.models.generate_content(
-                model=self.model, contents=self._to_api(messages), config=config
-            )
-        except errors.ClientError as exc:
-            raise LLMError(f"Gemini request failed ({exc.code}): {exc.message}") from exc
-        except errors.ServerError as exc:
-            raise LLMError(f"Gemini server error ({exc.code}), try again later") from exc
+        contents = self._to_api(messages)
+        # The model that answered last goes first (sticky), then the rest of the chain.
+        order = [self.model] + [m for m in self.models if m != self.model]
+        failures = []
+        for model in order:
+            try:
+                response = self.client.models.generate_content(model=model, contents=contents, config=config)
+                self.model = model
+                break
+            except errors.ServerError as exc:          # 5xx: overloaded, try the next model
+                failures.append(f"{model}: {exc.code}")
+            except errors.ClientError as exc:
+                if exc.code in (404, 429):              # retired model / quota of this model exhausted
+                    failures.append(f"{model}: {exc.code}")
+                    continue
+                raise LLMError(f"Gemini request failed ({exc.code}): {exc.message}") from exc
+        else:
+            raise LLMError("Gemini: every configured model failed (" + ", ".join(failures) + "). Try again later.")
 
         if not response.candidates or response.candidates[0].content is None:
             raise LLMError("Gemini returned no answer (possibly blocked by its safety filters).")

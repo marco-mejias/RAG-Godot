@@ -19,6 +19,12 @@ documentation instead of guessing. You may then suggest what to search for.
 - Be concise: answer first, then the details that matter."""
 
 
+REWRITE_SYSTEM = """\
+You turn a user's question about the Godot 4 game engine into a search query for the official \
+English documentation. Translate it to English if needed, keep Godot class and method names \
+exactly as written, and drop filler words. Output ONLY the query, on one line, nothing else."""
+
+
 def format_excerpts(hits: Sequence[Hit], start: int = 1) -> str:
     blocks = []
     for n, hit in enumerate(hits, start):

@@ -82,8 +82,11 @@ def test_agent_stops_at_step_limit_and_asks_for_final_answer():
     assert "search limit" in llm.seen[-1][-1].content
 
 
-def test_qa_keeps_only_cited_sources():
-    llm = ScriptedLLM([Reply("Use get_node [1].", [])])
-    answer = answer_question("How do I get a node?", FakeRetriever(), llm)
+def test_qa_rewrites_query_and_keeps_only_cited_sources():
+    llm = ScriptedLLM([Reply("get node by path\n", []), Reply("Usa get_node [1].", [])])
+    retriever = FakeRetriever()
+    answer = answer_question("¿Cómo obtengo un nodo?", retriever, llm)
+    assert retriever.calls == [("search", "get node by path")]   # searched in English
+    assert answer.search_query == "get node by path"
     assert [n for n, _ in answer.sources] == [1]
-    assert "Question: How do I get a node?" in llm.seen[0][0].content
+    assert "Question: ¿Cómo obtengo un nodo?" in llm.seen[1][0].content   # answered in the user's words
