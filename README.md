@@ -7,18 +7,22 @@ A command-line assistant for the **Godot 4** game engine, built on the official 
 
 It is built **from scratch, without a RAG framework** (no LangChain / LlamaIndex): every step (parsing, chunking, embedding, retrieval, prompting, the agent loop) is plain Python that can be read in a few minutes. The LLM is **swappable**: Gemini, Claude or a local model through Ollama.
 
+What retrieval finds for a question (real output, before any LLM is involved):
+
 ```text
-$ python -m godot_rag ask "How do I detect if a CharacterBody2D is touching the floor?"
+$ python -m godot_rag search "how to connect a signal from code with arguments" -k 4
 
-Call `is_on_floor()` after `move_and_slide()` in `_physics_process()` [1][2]. It returns `true`
-if the body collided with the floor on the last `move_and_slide()` call ...
-
-Sources:
-  [1] CharacterBody2D > Method Descriptions > is_on_floor
-      https://docs.godotengine.org/en/stable/classes/class_characterbody2d.html#class-characterbody2d-method-is-on-floor
-  [2] Using CharacterBody2D/3D > Examples > Platformer movement
-      https://docs.godotengine.org/en/stable/tutorials/physics/using_character_body_2d.html#platformer-movement
+[1] 0.790  Signal > Description
+    https://docs.godotengine.org/en/stable/classes/class_signal.html#description
+[2] 0.782  Using signals > Connecting a signal via code
+    https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html#connecting-a-signal-via-code
+[3] 0.777  Using signals > Connecting a signal in the editor
+    https://docs.godotengine.org/en/stable/getting_started/step_by_step/signals.html#connecting-a-signal-in-the-editor
+[4] 0.773  Object > Method Descriptions > connect
+    https://docs.godotengine.org/en/stable/classes/class_object.html#class-object-method-connect
 ```
+
+`ask` gives these excerpts to the LLM and returns an answer that cites them as [1]..[4].
 
 ## How it works
 
