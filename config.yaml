@@ -1,0 +1,29 @@
+# Godot RAG assistant settings. Paths are relative to this file.
+
+docs:
+  repo: https://github.com/godotengine/godot-docs.git
+  branch: stable                      # the docs for the latest stable Godot 4 release
+  base_url: https://docs.godotengine.org/en/stable
+  # Top-level folders of the docs repo that get indexed.
+  include: [getting_started, tutorials, classes, about]
+
+paths:
+  raw: data/raw/godot-docs
+  index: data/index
+
+retrieval:
+  embedding_model: BAAI/bge-small-en-v1.5   # small, fast on CPU, good for English search
+  chunk_chars: 1500                         # max characters per chunk
+  chunk_overlap: 200                        # characters repeated between consecutive chunks
+  top_k: 6                                  # excerpts given to the LLM per question
+
+llm:
+  provider: gemini                    # gemini | claude | ollama  (env LLM_PROVIDER or --provider override it)
+  models:
+    gemini: gemini-2.5-flash
+    claude: claude-opus-5-5
+    ollama: qwen3:8b
+
+agent:
+  max_steps: 6                        # max tool-calling rounds for explain-error
+  results_per_search: 4
