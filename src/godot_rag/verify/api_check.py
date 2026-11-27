@@ -20,6 +20,7 @@ MEMBER_LABEL = re.compile(
     r"^\.\. _class_([A-Za-z0-9@_]+?)_(method|property|signal|constant|enum|theme_item|annotation|operator)_(\w+):",
     re.M,
 )
+CLASS_LABEL = re.compile(r"^\.\. _class_([A-Za-z0-9@_]+):\s*$", re.M)
 INHERITS = re.compile(r"^\*\*Inherits:\*\*(.+)$", re.M)
 REF_NAME = re.compile(r":ref:`([\w@]+)<class_")
 
@@ -44,6 +45,9 @@ GODOT3_RENAMES = {
     "empty": "is_empty", "change_scene": "change_scene_to_file", "funcref": "Callable",
     "is_network_master": "is_multiplayer_authority", "get_world": "get_world_3d",
 }
+
+LOOKS_LIKE_CODE = re.compile(r"^\s*(func|var|const|extends|signal|@onready|@export|class_name)\b|\w\s*[+\-*/]?=\s*\S", re.M)
+FILE_NAME = re.compile(r"\b[\w-]+\.(gd|tscn|scn|tres|res|cs|png|svg|json|import|godot)\b")
 
 DEFINES = re.compile(r"\b(?:func|var|const|signal|class_name|enum|class|for)\s+(\w+)")
 PARAMS = re.compile(r"\bfunc\s+\w+\s*\(([^)]*)\)")
@@ -85,8 +89,8 @@ class ApiIndex:
         classes: dict[str, ClassInfo] = {}
         for path in classes_dir.glob("class_*.rst"):
             text = path.read_text(encoding="utf-8")
-            title = next((l.strip() for l in text.splitlines()[:12] if l.strip() and not l.startswith((":", ".."))), "")
-            name = title or path.stem.removeprefix("class_")
+            label = CLASS_LABEL.search(text)          # ".. _class_Label:" holds the exact class name
+            name = label.group(1) if label else path.stem.removeprefix("class_")
             inh = INHERITS.search(text)
             parents = REF_NAME.findall(inh.group(1)) if inh else []
             members = {m.group(3) for m in MEMBER_LABEL.finditer(text)}
@@ -127,6 +131,7 @@ class ApiIssue:
             "class": "class not found in Godot 4",
             "member": "method/property not found in Godot 4",
             "call": "not a Godot function (fine if it's defined in your own code)",
+            "own": "not a Godot class (fine if it's your own class_name or a node name)",
         }[self.kind]
         bare = self.name.split(".")[-1].rstrip("()")
         if bare in GODOT3_RENAMES:
@@ -142,15 +147,18 @@ class ApiReport:
 
     @property
     def ok(self) -> bool:
-        return not any(i.kind != "call" for i in self.issues)
+        return not any(i.kind in ("class", "member") for i in self.issues)
 
     def summary(self) -> str:
         if not self.checked:
             return "API check: no Godot APIs to check."
-        if not self.issues:
-            return f"API check: {len(self.checked)} Godot names checked, all exist in Godot 4."
-        lines = [f"API check: {len(self.checked)} names checked, {len(self.issues)} not found:"]
-        lines += [f"  - {i.describe()}" for i in self.issues]
+        errors = [i for i in self.issues if i.kind in ("class", "member")]
+        others = [i.name for i in self.issues if i.kind not in ("class", "member")]
+        head = (f"API check: {len(self.checked)} names checked, all Godot APIs exist in Godot 4." if not errors
+                else f"API check: {len(self.checked)} names checked, {len(errors)} wrong:")
+        lines = [head] + [f"  - {i.describe()}" for i in errors]
+        if others:
+            lines.append(f"  (not in the Godot reference, probably your own names: {', '.join(others)})")
         return "\n".join(lines)
 
 
@@ -158,14 +166,19 @@ def extract_code(text: str) -> list[str]:
     """GDScript code from fenced blocks and inline `code` (C# blocks are skipped)."""
     snippets = []
     for lang, body in re.findall(r"```([\w#+-]*)\n(.*?)```", text, flags=re.S):
-        if lang.lower() not in ("csharp", "cs", "c#", "cpp", "c++", "bash", "sh", "json", "text"):
-            snippets.append(body)
+        if lang.lower() not in ("", "gdscript", "gd", "godot", "python"):
+            continue
+        # Untagged blocks are often scene-tree drawings or logs, not code: keep only real GDScript.
+        if lang == "" and not LOOKS_LIKE_CODE.search(body):
+            continue
+        snippets.append(body)
     without_blocks = re.sub(r"```.*?```", "", text, flags=re.S)
     snippets += re.findall(r"`([^`\n]+)`", without_blocks)
     return snippets
 
 
 def _clean(code: str) -> str:
+    code = FILE_NAME.sub("_file", code)                       # player.gd, Hud.tscn...
     code = re.sub(r"#.*", "", code)                           # comments
     code = re.sub(r"(\"[^\"\n]*\"|'[^'\n]*')", '""', code)   # strings ("node paths", signal names...)
     return re.sub(r"[$%][\w/.]+", "_node", code)              # $Path/To/Node, %UniqueNode
@@ -195,17 +208,24 @@ def check_text(text: str, api: ApiIndex) -> ApiReport:
         if issue:
             report.issues.append(issue)
 
+    def class_issue(name: str) -> ApiIssue | None:
+        if api.get(name):
+            return None
+        hint = _close(name, class_names)
+        # Close to a real class or a known Godot 3 name: an error. Otherwise probably the user's own.
+        return ApiIssue(name, "class" if hint else "own", hint)
+
     # 1) class names in type positions: extends X, is X, as X, x: X, -> X, X.member, X(...)
     for name in re.findall(r"(?:\bextends|\bis|\bas|:|->)\s*([A-Z]\w*)|\b([A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*)(?=\s*[.(])", code):
         name = next(n for n in name if n)
         if name in defined or name.isupper():
             continue
-        add(name, None if api.get(name) else ApiIssue(name, "class", _close(name, class_names)))
+        add(name, class_issue(name))
     # a lone class name in inline code, e.g. `CharacterBody2D`
     for snippet in extract_code(text):
         s = snippet.strip()
         if re.fullmatch(r"[A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*[23]?D?", s) and s not in defined:
-            add(s, None if api.get(s) else ApiIssue(s, "class", _close(s, class_names)))
+            add(s, class_issue(s))
 
     # 2) Class.member: the member must exist in that class or its ancestors
     for cls_name, member in re.findall(r"\b([A-Z][A-Za-z0-9]*[a-z][A-Za-z0-9]*)\.([A-Za-z_]\w*)", code):

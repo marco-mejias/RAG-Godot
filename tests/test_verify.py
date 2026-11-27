@@ -60,6 +60,28 @@ def test_csharp_blocks_and_strings_are_ignored():
     assert check_text(text, API).issues == []
 
 
+def test_scene_tree_drawings_file_names_and_node_names_are_not_errors():
+    text = """```
+Main
+└─ HUD (MarginContainer)
+   └─ HealthLabel (Label)
+```
+Attach `player.gd` and rename `HealthLabel`."""
+    report = check_text(text, API)
+    assert report.ok
+    assert {i.kind for i in report.issues} <= {"own"}          # node names: a note, not an error
+
+
+def test_class_name_comes_from_its_label_even_with_a_meta_block(tmp_path):
+    (tmp_path / "class_label.rst").write_text(
+        ":github_url: hide\n\n.. meta::\n\t:keywords: text\n\n.. _class_Label:\n\nLabel\n=====\n\n"
+        "**Inherits:** :ref:`Control<class_Control>` **<** :ref:`Node<class_Node>`\n\n"
+        ".. _class_Label_property_text:\n", encoding="utf-8")
+    api = ApiIndex.build(tmp_path)
+    assert api.get("Label").parents == ["Control", "Node"]
+    assert api.get("Label").members == {"text"}
+
+
 # --- layer 2 -------------------------------------------------------------------------------
 
 def hit(section, body):
