@@ -17,6 +17,8 @@ from godot_rag.llm import LLM, Message, ToolCall, ToolSpec
 from godot_rag.prompts import AGENT_SYSTEM, FINAL_ANSWER_NUDGE, format_excerpts
 from godot_rag.qa import CITATION_RE
 from godot_rag.retrieve import Hit, Retriever
+from godot_rag.verify.api_check import ApiIndex, ApiReport, check_text
+from godot_rag.verify.judge import Verdict, judge
 
 TOOLS = [
     ToolSpec(
@@ -55,12 +57,18 @@ class Diagnosis:
     errors: list[GodotError]
     sources: list[tuple[int, Hit]]          # excerpts cited in the answer
     steps: list[str] = field(default_factory=list)   # tool calls made, for transparency
+    draft: str = ""                                  # the agent's answer before verification
+    api_report: ApiReport | None = None
+    verdict: Verdict | None = None
 
 
 class ErrorAgent:
     def __init__(self, llm: LLM, retriever: Retriever, max_steps: int = 6, results_per_search: int = 4,
-                 known_classes: set[str] | None = None):
+                 known_classes: set[str] | None = None, api: ApiIndex | None = None, verifier: LLM | None = None):
         self.llm = llm
+        self.api = api                      # layer 1: API existence check
+        self.verifier = verifier            # layer 2: judge LLM
+        self._log = ""
         self.retriever = retriever
         self.max_steps = max_steps
         self.k = results_per_search
@@ -109,6 +117,7 @@ class ErrorAgent:
         return "\n\n".join(parts)
 
     def run(self, log: str, code: str | None = None) -> Diagnosis:
+        self._log = log
         self._numbered.clear()
         self._seen.clear()
         errors = parse_godot_errors(log, self.known_classes)
@@ -131,6 +140,14 @@ class ErrorAgent:
         return self._finish(reply.text or "The agent ran out of steps without an answer.", errors, steps)
 
     def _finish(self, text: str, errors: list[GodotError], steps: list[str]) -> Diagnosis:
+        text = text.strip()
+        report = check_text(text, self.api) if self.api else None
+        verdict, draft = None, text
+        if self.verifier and self._numbered:
+            summary = report.summary() if report else "API check: not run."
+            question = f"Explain this Godot error and how to fix it:\n{self._log.strip()}"
+            verdict = judge(question, self._numbered, text, summary, self.verifier)
+            text = verdict.corrected_answer.strip() or text
         numbers = sorted({int(n) for n in CITATION_RE.findall(text)})
         sources = [(n, self._numbered[n - 1]) for n in numbers if 0 < n <= len(self._numbered)]
-        return Diagnosis(text.strip(), errors, sources, steps)
+        return Diagnosis(text, errors, sources, steps, draft, report, verdict)

@@ -13,3 +13,6 @@ __pycache__/
 
 # local editor/preview settings
 .claude/
+
+# MCP client config with this machine's absolute path (see .mcp.json.example)
+.mcp.json

@@ -6,7 +6,7 @@ import os
 
 import ollama
 
-from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec
+from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec, parse_json_object
 
 
 class OllamaLLM(LLM):
@@ -32,14 +32,19 @@ class OllamaLLM(LLM):
                 out.append({"role": "user", "content": m.content})
         return out
 
-    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None) -> Reply:
+    def chat_json(self, system: str, messages: list[Message], schema: dict) -> dict:
+        return parse_json_object(self.chat(system, messages, json_schema=schema).text)
+
+    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None,
+             json_schema: dict | None = None) -> Reply:
         api_tools = [
             {"type": "function", "function": {"name": t.name, "description": t.description, "parameters": t.parameters}}
             for t in tools or []
         ]
         try:
             response = self.client.chat(
-                model=self.model, messages=self._to_api(system, messages), tools=api_tools or None
+                model=self.model, messages=self._to_api(system, messages), tools=api_tools or None,
+                format=json_schema,     # constrained decoding to the schema
             )
         except ollama.ResponseError as exc:
             raise LLMError(f"Ollama: {exc.error} (did you run `ollama pull {self.model}`?)") from exc

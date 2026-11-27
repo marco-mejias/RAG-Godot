@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "godot-docs": {
+      "command": "C:\\path\\to\\RAG-Godot\\.venv\\Scripts\\godot-rag-mcp.exe",
+      "args": []
+    }
+  }
+}

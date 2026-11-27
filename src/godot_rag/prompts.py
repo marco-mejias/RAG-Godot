@@ -54,6 +54,59 @@ doesn't explain something, say that it comes from general Godot knowledge. Never
 if you're not sure a method exists, check it with lookup_class. Reply in the language the user \
 writes in (English if they only pasted a log)."""
 
+JUDGE_SYSTEM = """\
+You are a strict fact-checker for answers about the Godot 4 game engine. You get a question, \
+numbered documentation excerpts, a draft answer written from them, and the result of an \
+automatic check of the Godot APIs the draft mentions.
+
+Your job is to VERIFY, not to answer from your own knowledge:
+1. Split the draft into its factual claims (skip greetings and pure formatting). For each claim, \
+decide using ONLY the excerpts:
+   - "supported": an excerpt states it or it follows directly from one. List those excerpt numbers.
+   - "unsupported": no excerpt backs it (it may still be true, but it isn't grounded).
+   - "contradicted": an excerpt says otherwise.
+   Code examples count as claims: check that the methods and properties they use match the excerpts.
+2. Treat every API reported as "not found in Godot 4" by the automatic check as an error to fix.
+3. If any claim is unsupported or contradicted, or an API is not found, write "corrected_answer": \
+the draft rewritten so that it only states what the excerpts support, keeping the [n] citations, \
+the language of the question and the useful code. Otherwise set it to "".
+4. If the excerpts clearly miss information needed to answer the question, put a short English \
+search query for it in "search_again"; otherwise "".
+
+Be strict but fair: rewording, summarising and obvious consequences of an excerpt are supported."""
+
+JUDGE_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "claims": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "claim": {"type": "string"},
+                    "verdict": {"type": "string", "enum": ["supported", "unsupported", "contradicted"]},
+                    "citations": {"type": "array", "items": {"type": "integer"}},
+                    "note": {"type": "string"},
+                },
+                "required": ["claim", "verdict", "citations", "note"],
+                "additionalProperties": False,
+            },
+        },
+        "corrected_answer": {"type": "string"},
+        "search_again": {"type": "string"},
+    },
+    "required": ["claims", "corrected_answer", "search_again"],
+    "additionalProperties": False,
+}
+
+
+def judge_prompt(question: str, hits: Sequence[Hit], draft: str, api_summary: str) -> str:
+    return (
+        f"Question: {question}\n\n===\n\nDocumentation excerpts:\n\n{format_excerpts(hits)}\n\n===\n\n"
+        f"Draft answer:\n{draft}\n\n===\n\nAutomatic API check:\n{api_summary}"
+    )
+
+
 FINAL_ANSWER_NUDGE = (
     "You have reached the search limit. Write your final answer now using what you found, "
     "with the sections What happened / Likely cause / How to fix it."

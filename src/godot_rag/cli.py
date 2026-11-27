@@ -44,6 +44,11 @@ def cmd_ingest(settings: Settings, args) -> int:
     start = time.perf_counter()
     total = build_index(settings, chunks, Embedder(settings.embedding_model))
     print(f"Done: {total} chunks indexed in {time.perf_counter() - start:.0f}s -> {settings.index_dir}")
+
+    from godot_rag.verify.api_check import ApiIndex
+    api = ApiIndex.build(settings.raw_dir / "classes")
+    api.save(settings.index_dir / "api_index.json")
+    print(f"API table for answer checks: {len(api.classes)} classes, {len(api.all_members)} member names.")
     return 0
 
 
@@ -56,13 +61,37 @@ def cmd_search(settings: Settings, args) -> int:
     return 0
 
 
+def _verifier(settings: Settings, args):
+    """Layer 2 judge, only when --verify is given."""
+    if not getattr(args, "verify", False):
+        return None
+    from godot_rag.llm import get_llm
+    return get_llm(settings, args.verifier or settings.verify_provider)
+
+
+def _print_checks(result, show_draft: bool) -> None:
+    """Layers 1 and 2 results, printed after the answer."""
+    verdict, report = result.verdict, result.api_report
+    if verdict and verdict.needs_fix and show_draft and result.draft != result.text:
+        print("\n--- Draft before verification ---\n" + result.draft)
+    print()
+    if report:
+        print(report.summary())
+    if verdict:
+        print(verdict.summary())
+        if result.draft != result.text:
+            print("  -> The answer above was corrected by the verifier.")
+
+
 def cmd_ask(settings: Settings, args) -> int:
     from godot_rag.llm import get_llm
     from godot_rag.qa import answer_question
     from godot_rag.retrieve import Retriever
+    from godot_rag.verify.api_check import ApiIndex
 
     llm = get_llm(settings, args.provider)
-    answer = answer_question(args.question, Retriever(settings), llm, k=args.k, rewrite=not args.no_rewrite)
+    answer = answer_question(args.question, Retriever(settings), llm, k=args.k, rewrite=not args.no_rewrite,
+                             api=ApiIndex.from_settings(settings), verifier=_verifier(settings, args))
     if args.show_context:
         print(f"Search query: {answer.search_query}")
         print("Context given to the LLM:")
@@ -71,6 +100,7 @@ def cmd_ask(settings: Settings, args) -> int:
         print()
     print(answer.text)
     _print_sources(answer.sources)
+    _print_checks(answer, args.show_draft)
     print(f"\n({llm!r})")
     return 0
 
@@ -97,10 +127,12 @@ def cmd_explain_error(settings: Settings, args) -> int:
     from godot_rag.errors.agent import ErrorAgent
     from godot_rag.llm import get_llm
     from godot_rag.retrieve import Retriever
+    from godot_rag.verify.api_check import ApiIndex
 
     code = Path(args.code).read_text(encoding="utf-8") if args.code else None
     llm = get_llm(settings, args.provider)
-    agent = ErrorAgent(llm, Retriever(settings), settings.max_agent_steps, settings.results_per_search, known)
+    agent = ErrorAgent(llm, Retriever(settings), settings.max_agent_steps, settings.results_per_search, known,
+                       api=ApiIndex.from_settings(settings), verifier=_verifier(settings, args))
     diagnosis = agent.run(log, code)
     if diagnosis.steps:
         print("Searches made by the agent:")
@@ -109,6 +141,7 @@ def cmd_explain_error(settings: Settings, args) -> int:
         print()
     print(diagnosis.text)
     _print_sources(diagnosis.sources)
+    _print_checks(diagnosis, args.show_draft)
     print(f"\n({llm!r})")
     return 0
 
@@ -134,6 +167,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--provider", help="gemini | claude | ollama (overrides config)")
     p.add_argument("--show-context", action="store_true", help="also print the search query and retrieved excerpts")
     p.add_argument("--no-rewrite", action="store_true", help="search with the question as typed (no LLM rewrite)")
+    _add_verify_args(p)
     p.set_defaults(func=cmd_ask)
 
     p = sub.add_parser("explain-error", help="explain a Godot error and how to fix it")
@@ -141,8 +175,16 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--code", help="the .gd script involved (optional, improves the answer)")
     p.add_argument("--provider", help="gemini | claude | ollama (overrides config)")
     p.add_argument("--parse-only", action="store_true", help="only show what was extracted from the log (no LLM)")
+    _add_verify_args(p)
     p.set_defaults(func=cmd_explain_error)
     return parser
+
+
+def _add_verify_args(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--verify", action="store_true",
+                   help="have a second LLM fact-check the answer against the excerpts (layer 2)")
+    p.add_argument("--verifier", help="provider for --verify (default: verify.provider in config, Claude)")
+    p.add_argument("--show-draft", action="store_true", help="with --verify, also print the draft if it was corrected")
 
 
 def main(argv: list[str] | None = None) -> int:

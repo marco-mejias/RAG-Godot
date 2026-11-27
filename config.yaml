@@ -25,6 +25,12 @@ llm:
     claude: claude-opus-5-5
     ollama: qwen3:8b
 
+verify:
+  # Layer 2 (--verify): the LLM that fact-checks answers against the excerpts.
+  # A different, stronger model than the generator works best. With Claude Opus 5.5 a check
+  # costs a few cents; set models.claude to claude-haiku-5-5 for checks under a tenth of a cent.
+  provider: claude
+
 agent:
   max_steps: 6                        # max tool-calling rounds for explain-error
   results_per_search: 4

@@ -16,6 +16,7 @@ dependencies = [
     "google-genai>=1.20",
     "anthropic>=0.70",
     "ollama>=0.5",
+    "mcp>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -23,6 +24,7 @@ dev = ["pytest>=8"]
 
 [project.scripts]
 godot-rag = "godot_rag.cli:main"
+godot-rag-mcp = "godot_rag.mcp_server:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

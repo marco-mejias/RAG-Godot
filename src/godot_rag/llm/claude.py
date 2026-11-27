@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import anthropic
 
-from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec
+from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec, parse_json_object
 
 # Models that accept server-side refusal fallbacks ("default" routes by refusal category).
 FALLBACK_MODELS = ("claude-opus-5-5", "claude-sonnet-5-5", "claude-opus-5", "claude-fable-5")
@@ -42,13 +42,22 @@ class ClaudeLLM(LLM):
                 out.append({"role": "assistant", "content": content})
         return out
 
-    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None) -> Reply:
+    def chat_json(self, system: str, messages: list[Message], schema: dict) -> dict:
+        # Native structured outputs: the reply is guaranteed to be valid JSON for `schema`.
+        reply = self.chat(system, messages, json_schema=schema)
+        return parse_json_object(reply.text)
+
+    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None,
+             json_schema: dict | None = None) -> Reply:
+        output_config: dict = {"effort": self.effort}
+        if json_schema:
+            output_config["format"] = {"type": "json_schema", "schema": json_schema}
         kwargs: dict = {
             "model": self.model,
             "max_tokens": 16000,
             "system": system,
             "messages": self._to_api(messages),
-            "output_config": {"effort": self.effort},
+            "output_config": output_config,
         }
         if tools:
             kwargs["tools"] = [

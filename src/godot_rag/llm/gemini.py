@@ -7,7 +7,7 @@ import os
 from google import genai
 from google.genai import errors, types
 
-from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec
+from godot_rag.llm.base import LLM, LLMError, Message, Reply, ToolCall, ToolSpec, parse_json_object
 
 
 class GeminiLLM(LLM):
@@ -51,9 +51,15 @@ class GeminiLLM(LLM):
                 out.append(types.Content(role="model", parts=parts))
         return out
 
-    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None) -> Reply:
+    def chat_json(self, system: str, messages: list[Message], schema: dict) -> dict:
+        return parse_json_object(self.chat(system, messages, json_schema=schema).text)
+
+    def chat(self, system: str, messages: list[Message], tools: list[ToolSpec] | None = None,
+             json_schema: dict | None = None) -> Reply:
         config = types.GenerateContentConfig(
             system_instruction=system,
+            response_mime_type="application/json" if json_schema else None,
+            response_json_schema=json_schema,
             # We run the tool loop ourselves (same loop for every provider).
             automatic_function_calling=types.AutomaticFunctionCallingConfig(disable=True),
             tools=[

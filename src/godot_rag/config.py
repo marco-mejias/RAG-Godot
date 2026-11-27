@@ -29,6 +29,7 @@ class Settings:
     models: dict[str, str | list[str]]     # a list = fallback chain (Gemini)
     max_agent_steps: int
     results_per_search: int
+    verify_provider: str = "claude"
 
     def model_for(self, provider: str) -> str | list[str]:
         try:
@@ -58,4 +59,5 @@ def load_settings(path: Path | None = None) -> Settings:
         models=dict(cfg["llm"]["models"]),
         max_agent_steps=int(cfg["agent"]["max_steps"]),
         results_per_search=int(cfg["agent"]["results_per_search"]),
+        verify_provider=(cfg.get("verify") or {}).get("provider", "claude"),
     )
